@@ -48,7 +48,7 @@ async def llamaquery(request: Request):
 
     # Initialize the LlamaCloud index
     index = LlamaCloudIndex(
-        name="Sharepoint Thematic Work",
+        name="SharePoint Thematic Work",
         project_name="The BEAST",
         organization_id="8ff953cd-9c16-49f2-93a4-732206133586",
         api_key=os.getenv("LLAMA_API_KEY"),
