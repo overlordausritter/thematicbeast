@@ -4,23 +4,10 @@ import httpx
 import asyncio
 import os
 import uvicorn
-import re
 
 os.environ["OPENAI_API_KEY"] = os.getenv("OPENAI_API_KEY", "")
 
 app = FastAPI()
-
-
-def normalize_variants(value: str) -> list[str]:
-    """
-    Generate normalized variants for the company name to handle encoding differences.
-    Example: 'Blue Ocean' → ['blue ocean', 'blue%20ocean', 'blue_ocean', 'blueocean']
-    """
-    if not value:
-        return []
-    v = value.strip().lower()
-    return list({v, v.replace(" ", "%20"), v.replace(" ", "_"), v.replace(" ", "")})
-
 
 @app.post("/llamaquery")
 async def llamaquery(request: Request):
@@ -28,19 +15,6 @@ async def llamaquery(request: Request):
     query = data.get("query")
     if not query:
         return {"error": "Missing 'query' in request body"}
-
-    # Pull the company name if passed in via filters or payload
-    filters_payload = data.get("filters") or data.get("preFilters")
-    company_value = None
-    if filters_payload and "filters" in filters_payload:
-        first = filters_payload["filters"][0]
-        company_value = first.get("value")
-    if not company_value:
-        company_value = data.get("company") or ""  # fallback
-    if not company_value:
-        return {"error": "Missing 'company' name in payload"}
-
-    company_variants = normalize_variants(company_value)
 
     # Custom HTTP client with extended timeouts
     timeout = httpx.Timeout(connect=10.0, read=120.0, write=10.0, pool=10.0)
@@ -68,7 +42,7 @@ async def llamaquery(request: Request):
             else:
                 return {"error": f"Llama Cloud connection failed: {str(e)}"}
 
-    # Build structured chunk-level results
+    # Build structured chunk-level results (no filtering)
     results = []
     for node in nodes:
         node_obj = getattr(node, "node", node)
@@ -87,32 +61,11 @@ async def llamaquery(request: Request):
             "web_url": web_url,
         })
 
-    # --- Filter chunks that do NOT match the company name ---
-    def match_company(text, file_name, web_url):
-        text_lower = (text or "").lower()
-        file_lower = (file_name or "").lower()
-        url_lower = (web_url or "").lower()
-        return any(v in text_lower or v in file_lower or v in url_lower for v in company_variants)
-
-    filtered_results = [
-        r for r in results if match_company(r["text"], r["file_name"], r["web_url"])
-    ]
-    # ---------------------------------------------------------
-
-    # If nothing matches, return notice
-    if not filtered_results:
-        return {
-            "company": company_value,
-            "results": [],
-            "message": f"No relevant chunks found for '{company_value}'."
-        }
-
-    # Return clean structured data
+    # Return all results without filtering
     return {
-        "company": company_value,
-        "results": filtered_results
+        "results": results,
+        "count": len(results)
     }
-
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000)
